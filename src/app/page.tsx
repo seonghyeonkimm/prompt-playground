@@ -1,4 +1,5 @@
 import db from "@/lib/db";
+import { ensureInitialized } from "@/lib/init";
 import Link from "next/link";
 
 interface Stats {
@@ -14,72 +15,55 @@ interface DailyCount {
 }
 
 interface TopProject {
-  cwd: string;
+  project_path: string;
   session_count: number;
   turn_count: number;
 }
 
 interface RecentSession {
   id: string;
-  cwd: string | null;
+  project_path: string | null;
+  git_branch: string | null;
   started_at: string;
+  last_activity_at: string | null;
   turn_count: number;
   last_prompt: string | null;
 }
 
 function getStats() {
+  ensureInitialized();
+
   const summary = db
     .prepare(
-      `
-    SELECT
-      COUNT(DISTINCT s.id) as total_sessions,
-      COUNT(t.id) as total_turns,
-      MIN(s.started_at) as first_session,
-      MAX(s.started_at) as last_session
-    FROM sessions s
-    LEFT JOIN conversation_turns t ON s.id = t.session_id
-    WHERE s.started_at >= datetime('now', '-7 days')
-  `
+      `SELECT COUNT(DISTINCT s.id) as total_sessions, COUNT(t.id) as total_turns,
+              MIN(s.started_at) as first_session, MAX(s.started_at) as last_session
+       FROM sessions s LEFT JOIN conversation_turns t ON s.id = t.session_id
+       WHERE s.started_at >= datetime('now', '-7 days')`
     )
     .get() as Stats;
 
   const daily = db
     .prepare(
-      `
-    SELECT DATE(prompt_at) as date, COUNT(*) as count
-    FROM conversation_turns
-    WHERE prompt_at >= datetime('now', '-7 days')
-    GROUP BY DATE(prompt_at)
-    ORDER BY date DESC
-  `
+      `SELECT DATE(user_prompt_at) as date, COUNT(*) as count
+       FROM conversation_turns WHERE user_prompt_at >= datetime('now', '-7 days')
+       GROUP BY DATE(user_prompt_at) ORDER BY date DESC`
     )
     .all() as DailyCount[];
 
   const topProjects = db
     .prepare(
-      `
-    SELECT s.cwd, COUNT(DISTINCT s.id) as session_count, COUNT(t.id) as turn_count
-    FROM sessions s
-    LEFT JOIN conversation_turns t ON s.id = t.session_id
-    WHERE s.started_at >= datetime('now', '-7 days') AND s.cwd IS NOT NULL
-    GROUP BY s.cwd
-    ORDER BY turn_count DESC
-    LIMIT 5
-  `
+      `SELECT s.project_path, COUNT(DISTINCT s.id) as session_count, COUNT(t.id) as turn_count
+       FROM sessions s LEFT JOIN conversation_turns t ON s.id = t.session_id
+       WHERE s.started_at >= datetime('now', '-7 days') AND s.project_path IS NOT NULL
+       GROUP BY s.project_path ORDER BY turn_count DESC LIMIT 5`
     )
     .all() as TopProject[];
 
   const recentSessions = db
     .prepare(
-      `
-    SELECT s.id, s.cwd, s.started_at, COUNT(t.id) as turn_count,
-           (SELECT prompt FROM conversation_turns WHERE session_id = s.id ORDER BY turn_number DESC LIMIT 1) as last_prompt
-    FROM sessions s
-    LEFT JOIN conversation_turns t ON s.id = t.session_id
-    GROUP BY s.id
-    ORDER BY s.started_at DESC
-    LIMIT 5
-  `
+      `SELECT s.id, s.project_path, s.git_branch, s.started_at, s.last_activity_at, s.turn_count,
+              (SELECT user_prompt FROM conversation_turns WHERE session_id = s.id ORDER BY turn_number DESC LIMIT 1) as last_prompt
+       FROM sessions s ORDER BY s.last_activity_at DESC LIMIT 5`
     )
     .all() as RecentSession[];
 
@@ -96,9 +80,9 @@ function formatDate(dateStr: string | null) {
   });
 }
 
-function shortPath(cwd: string | null) {
-  if (!cwd) return "unknown";
-  const parts = cwd.split("/");
+function shortPath(p: string | null) {
+  if (!p || p === "unknown") return "unknown";
+  const parts = p.split("/");
   return parts.slice(-2).join("/");
 }
 
@@ -109,7 +93,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <span className="text-xs text-green-500 flex items-center gap-1">
+          <span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse" />
+          Live (file watching)
+        </span>
+      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -143,17 +133,13 @@ export default function Dashboard() {
                 const height = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
                 return (
                   <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
-                    <span className="text-xs text-[var(--muted-foreground)]">
-                      {d.count}
-                    </span>
+                    <span className="text-xs text-[var(--muted-foreground)]">{d.count}</span>
                     <div
                       className="w-full bg-[var(--accent)] rounded-sm min-h-[2px]"
                       style={{ height: `${height}%` }}
                     />
                     <span className="text-[10px] text-[var(--muted-foreground)]">
-                      {new Date(d.date).toLocaleDateString("en-US", {
-                        weekday: "short",
-                      })}
+                      {new Date(d.date).toLocaleDateString("en-US", { weekday: "short" })}
                     </span>
                   </div>
                 );
@@ -169,12 +155,12 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold mb-3">Top Projects (7d)</h2>
             <div className="bg-[var(--card)] rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
               {topProjects.map((p) => (
-                <div key={p.cwd} className="px-4 py-3 flex justify-between">
+                <div key={p.project_path} className="px-4 py-3 flex justify-between">
                   <span className="font-mono text-sm truncate">
-                    {shortPath(p.cwd)}
+                    {shortPath(p.project_path)}
                   </span>
                   <span className="text-[var(--muted-foreground)] text-sm whitespace-nowrap ml-4">
-                    {p.session_count} sessions, {p.turn_count} turns
+                    {p.session_count}s, {p.turn_count}t
                   </span>
                 </div>
               ))}
@@ -188,7 +174,7 @@ export default function Dashboard() {
           <div className="bg-[var(--card)] rounded-lg border border-[var(--border)] divide-y divide-[var(--border)]">
             {recentSessions.length === 0 ? (
               <div className="px-4 py-8 text-center text-[var(--muted-foreground)]">
-                No sessions yet. Start using Claude Code with hooks enabled.
+                No sessions found. Claude Code transcripts will appear automatically.
               </div>
             ) : (
               recentSessions.map((s) => (
@@ -198,11 +184,18 @@ export default function Dashboard() {
                   className="block px-4 py-3 hover:bg-[var(--muted)] transition-colors"
                 >
                   <div className="flex justify-between items-start">
-                    <span className="font-mono text-sm text-[var(--muted-foreground)]">
-                      {shortPath(s.cwd)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm text-[var(--muted-foreground)]">
+                        {shortPath(s.project_path)}
+                      </span>
+                      {s.git_branch && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)]">
+                          {s.git_branch}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-[var(--muted-foreground)]">
-                      {formatDate(s.started_at)}
+                      {formatDate(s.last_activity_at || s.started_at)}
                     </span>
                   </div>
                   {s.last_prompt && (
@@ -240,12 +233,8 @@ function StatCard({
 }) {
   return (
     <div className="bg-[var(--card)] rounded-lg border border-[var(--border)] p-4">
-      <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">
-        {label}
-      </p>
-      <p className={`mt-1 ${isText ? "text-sm" : "text-2xl font-bold"}`}>
-        {value}
-      </p>
+      <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide">{label}</p>
+      <p className={`mt-1 ${isText ? "text-sm" : "text-2xl font-bold"}`}>{value}</p>
     </div>
   );
 }

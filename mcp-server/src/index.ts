@@ -26,34 +26,33 @@ server.tool(
   "List recent Claude Code sessions with turn counts",
   {
     limit: z.number().optional().describe("Number of sessions to return (default 10)"),
-    cwd_filter: z.string().optional().describe("Filter by project path (partial match)"),
+    project_filter: z.string().optional().describe("Filter by project path (partial match)"),
     date_from: z.string().optional().describe("Start date (YYYY-MM-DD)"),
     date_to: z.string().optional().describe("End date (YYYY-MM-DD)"),
   },
-  async ({ limit = 10, cwd_filter, date_from, date_to }) => {
+  async ({ limit = 10, project_filter, date_from, date_to }) => {
     let query = `
-      SELECT s.id, s.cwd, s.started_at, s.ended_at, s.source,
-             COUNT(t.id) as turn_count
-      FROM sessions s
-      LEFT JOIN conversation_turns t ON s.id = t.session_id
+      SELECT id, project_path, project_hash, started_at, last_activity_at,
+             version, git_branch, turn_count
+      FROM sessions
       WHERE 1=1
     `;
     const params: unknown[] = [];
 
-    if (cwd_filter) {
-      query += ` AND s.cwd LIKE ?`;
-      params.push(`%${cwd_filter}%`);
+    if (project_filter) {
+      query += ` AND project_path LIKE ?`;
+      params.push(`%${project_filter}%`);
     }
     if (date_from) {
-      query += ` AND s.started_at >= ?`;
+      query += ` AND started_at >= ?`;
       params.push(date_from);
     }
     if (date_to) {
-      query += ` AND s.started_at <= ?`;
+      query += ` AND started_at <= ?`;
       params.push(date_to + "T23:59:59Z");
     }
 
-    query += ` GROUP BY s.id ORDER BY s.started_at DESC LIMIT ?`;
+    query += ` ORDER BY last_activity_at DESC LIMIT ?`;
     params.push(limit);
 
     const sessions = db.prepare(query).all(...params);
@@ -88,23 +87,31 @@ server.tool(
 
     const turns = db
       .prepare(
-        `SELECT turn_number, prompt, prompt_at, response, response_at
+        `SELECT turn_number, user_prompt, user_prompt_at, assistant_text,
+                assistant_tools, assistant_at, model
          FROM conversation_turns WHERE session_id = ? ORDER BY turn_number ASC`
       )
       .all(session_id) as Array<{
       turn_number: number;
-      prompt: string;
-      prompt_at: string;
-      response: string | null;
-      response_at: string | null;
+      user_prompt: string;
+      user_prompt_at: string;
+      assistant_text: string | null;
+      assistant_tools: string | null;
+      assistant_at: string | null;
+      model: string | null;
     }>;
 
-    const header = `Session: ${session_id}\nProject: ${session.cwd || "unknown"}\nStarted: ${session.started_at}\n`;
+    const header = `Session: ${session_id}\nProject: ${session.project_path || "unknown"}\nBranch: ${session.git_branch || "unknown"}\nStarted: ${session.started_at}\n`;
     const formatted = turns
-      .map(
-        (t) =>
-          `[Turn ${t.turn_number}] ${t.prompt_at}\nUser: ${t.prompt}\nClaude: ${t.response || "(no response recorded)"}\n`
-      )
+      .map((t) => {
+        const tools = t.assistant_tools
+          ? JSON.parse(t.assistant_tools)
+              .map((tool: { name: string }) => tool.name)
+              .join(", ")
+          : "";
+        const toolLine = tools ? `\nTools used: ${tools}` : "";
+        return `[Turn ${t.turn_number}] ${t.user_prompt_at}${t.model ? ` (${t.model})` : ""}\nUser: ${t.user_prompt}\nClaude: ${t.assistant_text || "(no response recorded)"}${toolLine}\n`;
+      })
       .join("\n---\n");
 
     return {
@@ -135,8 +142,8 @@ server.tool(
     try {
       const results = db
         .prepare(
-          `SELECT ct.session_id, ct.turn_number, ct.prompt, ct.response,
-                  ct.prompt_at, s.cwd
+          `SELECT ct.session_id, ct.turn_number, ct.user_prompt, ct.assistant_text,
+                  ct.user_prompt_at, ct.model, s.project_path
            FROM conversation_fts fts
            JOIN conversation_turns ct ON fts.rowid = ct.id
            JOIN sessions s ON ct.session_id = s.id
@@ -155,12 +162,12 @@ server.tool(
       // Fallback to LIKE
       const results = db
         .prepare(
-          `SELECT ct.session_id, ct.turn_number, ct.prompt, ct.response,
-                  ct.prompt_at, s.cwd
+          `SELECT ct.session_id, ct.turn_number, ct.user_prompt, ct.assistant_text,
+                  ct.user_prompt_at, ct.model, s.project_path
            FROM conversation_turns ct
            JOIN sessions s ON ct.session_id = s.id
-           WHERE ct.prompt LIKE ? OR ct.response LIKE ?
-           ORDER BY ct.prompt_at DESC
+           WHERE ct.user_prompt LIKE ? OR ct.assistant_text LIKE ?
+           ORDER BY ct.user_prompt_at DESC
            LIMIT ?`
         )
         .all(`%${query}%`, `%${query}%`, limit);
@@ -186,21 +193,20 @@ server.tool(
       .prepare(
         `SELECT
           COUNT(DISTINCT s.id) as total_sessions,
-          COUNT(t.id) as total_turns,
+          SUM(s.turn_count) as total_turns,
           MIN(s.started_at) as first_session,
-          MAX(s.started_at) as last_session
+          MAX(s.last_activity_at) as last_session
         FROM sessions s
-        LEFT JOIN conversation_turns t ON s.id = t.session_id
         WHERE s.started_at >= datetime('now', ?)`
       )
       .get(`-${days} days`);
 
     const daily = db
       .prepare(
-        `SELECT DATE(prompt_at) as date, COUNT(*) as count
+        `SELECT DATE(user_prompt_at) as date, COUNT(*) as count
          FROM conversation_turns
-         WHERE prompt_at >= datetime('now', ?)
-         GROUP BY DATE(prompt_at)
+         WHERE user_prompt_at >= datetime('now', ?)
+         GROUP BY DATE(user_prompt_at)
          ORDER BY date DESC`
       )
       .all(`-${days} days`);

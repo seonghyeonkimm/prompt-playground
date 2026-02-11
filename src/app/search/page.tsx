@@ -7,50 +7,38 @@ interface SearchResult {
   id: number;
   session_id: string;
   turn_number: number;
-  prompt: string;
-  response: string | null;
-  prompt_at: string;
-  cwd: string | null;
+  user_prompt: string;
+  assistant_text: string | null;
+  user_prompt_at: string;
+  project_path: string | null;
   prompt_snippet?: string;
   response_snippet?: string;
 }
 
-function shortPath(cwd: string | null) {
-  if (!cwd) return "unknown";
-  const parts = cwd.split("/");
+function shortPath(p: string | null) {
+  if (!p || p === "unknown") return "unknown";
+  const parts = p.split("/");
   return parts.slice(-2).join("/");
 }
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
 
-/** Render FTS5 snippet with <mark> tags as React elements (safe, no innerHTML) */
 function renderSnippet(snippet: string): ReactNode[] {
   const parts = snippet.split(/(<mark>|<\/mark>)/);
   const elements: ReactNode[] = [];
   let inMark = false;
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
-    if (part === "<mark>") {
-      inMark = true;
-      continue;
-    }
-    if (part === "</mark>") {
-      inMark = false;
-      continue;
-    }
+    if (part === "<mark>") { inMark = true; continue; }
+    if (part === "</mark>") { inMark = false; continue; }
     if (part) {
       elements.push(
         inMark ? (
-          <mark key={i} className="bg-blue-500/30 text-inherit px-0.5 rounded-sm">
-            {part}
-          </mark>
+          <mark key={i} className="bg-blue-500/30 text-inherit px-0.5 rounded-sm">{part}</mark>
         ) : (
           <span key={i}>{part}</span>
         )
@@ -69,13 +57,10 @@ export default function SearchPage() {
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
-
     setLoading(true);
     setSearched(true);
     try {
-      const res = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}`
-      );
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`);
       const data = await res.json();
       setResults(data.results || []);
     } catch {
@@ -88,7 +73,6 @@ export default function SearchPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Search</h1>
-
       <form onSubmit={handleSearch} className="flex gap-2">
         <input
           type="text"
@@ -107,18 +91,13 @@ export default function SearchPage() {
         </button>
       </form>
 
-      {/* Results */}
       {searched && (
         <div className="space-y-3">
           <p className="text-sm text-[var(--muted-foreground)]">
-            {results.length} result{results.length !== 1 ? "s" : ""} for &ldquo;
-            {query}&rdquo;
+            {results.length} result{results.length !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
           </p>
-
           {results.length === 0 ? (
-            <div className="text-center text-[var(--muted-foreground)] py-12">
-              No results found.
-            </div>
+            <div className="text-center text-[var(--muted-foreground)] py-12">No results found.</div>
           ) : (
             <div className="space-y-3">
               {results.map((r) => (
@@ -129,22 +108,18 @@ export default function SearchPage() {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-mono text-xs text-[var(--muted-foreground)]">
-                      {shortPath(r.cwd)} &middot; Turn {r.turn_number}
+                      {shortPath(r.project_path)} &middot; Turn {r.turn_number}
                     </span>
                     <span className="text-xs text-[var(--muted-foreground)]">
-                      {formatDate(r.prompt_at)}
+                      {formatDate(r.user_prompt_at)}
                     </span>
                   </div>
                   <p className="text-sm">
-                    {r.prompt_snippet
-                      ? renderSnippet(r.prompt_snippet)
-                      : r.prompt.slice(0, 200)}
+                    {r.prompt_snippet ? renderSnippet(r.prompt_snippet) : r.user_prompt.slice(0, 200)}
                   </p>
-                  {(r.response_snippet || r.response) && (
+                  {(r.response_snippet || r.assistant_text) && (
                     <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-                      {r.response_snippet
-                        ? renderSnippet(r.response_snippet)
-                        : r.response?.slice(0, 200)}
+                      {r.response_snippet ? renderSnippet(r.response_snippet) : r.assistant_text?.slice(0, 200)}
                     </p>
                   )}
                 </Link>
