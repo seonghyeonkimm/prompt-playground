@@ -49,3 +49,7 @@ mcp-server/dist/
 
 # context
 .context/
+
+# playwright
+.playwright-mcp/
+*.png
