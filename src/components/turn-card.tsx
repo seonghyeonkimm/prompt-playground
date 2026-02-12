@@ -45,6 +45,7 @@ function shortPath(p: string | null) {
 
 const SYSTEM_PREFIXES = [
   "<command-name>",
+  "<command-message>",
   "<command-",
   "<task-notification>",
   "<system-reminder>",
@@ -56,9 +57,21 @@ const SYSTEM_PREFIXES = [
   "Base directory for this skill:",
 ];
 
+const SYSTEM_CONTENT_PATTERNS = [
+  /<command-name>/,
+  /<command-message>/,
+  /<task-notification>/,
+  /<system-reminder>/,
+  /<system_instruction>/,
+  /<local-command-caveat>/,
+  /hook success:/,
+];
+
 export function isHumanPrompt(text: string): boolean {
   const trimmed = text.trimStart();
-  return !SYSTEM_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+  if (SYSTEM_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return false;
+  if (SYSTEM_CONTENT_PATTERNS.some((pattern) => pattern.test(trimmed))) return false;
+  return true;
 }
 
 export function RoleFilter({
@@ -149,8 +162,8 @@ export function TurnCard({
         </div>
       )}
 
-      {/* Claude response */}
-      {filter !== "user" && (turn.assistant_text || tools.length > 0) && (
+      {/* Claude response — hidden for "user" and "human" filters */}
+      {filter !== "user" && filter !== "human" && (turn.assistant_text || tools.length > 0) && (
         <div className="flex gap-3">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-xs font-bold">
             C
