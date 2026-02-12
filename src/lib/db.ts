@@ -46,6 +46,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_turns_session ON conversation_turns(session_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_path);
   CREATE INDEX IF NOT EXISTS idx_sessions_activity ON sessions(last_activity_at);
+  CREATE INDEX IF NOT EXISTS idx_turns_prompt_at ON conversation_turns(user_prompt_at);
 `);
 
 // FTS5 for full-text search
