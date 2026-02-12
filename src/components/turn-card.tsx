@@ -71,14 +71,12 @@ const SYSTEM_CONTENT_PATTERNS = [
   /hook success:/,
 ];
 
-// Detect skill/command templates: "# Something Command\n" or "# Something Skill\n"
-const SKILL_TEMPLATE_PATTERN = /^#\s+.+(?:Command|Skill)\s*\n/;
-
 export function isHumanPrompt(text: string): boolean {
   const trimmed = text.trimStart();
   if (SYSTEM_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return false;
   if (SYSTEM_CONTENT_PATTERNS.some((pattern) => pattern.test(trimmed))) return false;
-  if (SKILL_TEMPLATE_PATTERN.test(trimmed)) return false;
+  // Detect skill/command templates: starts with "# ", long content with subheadings
+  if (trimmed.startsWith("# ") && trimmed.length > 500 && /\n## /.test(trimmed)) return false;
   return true;
 }
 

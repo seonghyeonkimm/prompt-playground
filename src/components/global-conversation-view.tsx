@@ -28,7 +28,7 @@ export function GlobalConversationView({
   const limit = initialPagination.limit;
 
   const fetchTurns = useCallback(
-    async (page: number, proj: string, ord: string) => {
+    async (page: number, proj: string, ord: string, fil: TurnFilter) => {
       setLoading(true);
       try {
         const params = new URLSearchParams({
@@ -37,6 +37,7 @@ export function GlobalConversationView({
           order: ord,
         });
         if (proj) params.set("project", proj);
+        if (fil === "human") params.set("human", "true");
 
         const res = await fetch(`/api/conversations?${params}`);
         const data = await res.json();
@@ -51,18 +52,26 @@ export function GlobalConversationView({
     [limit]
   );
 
+  function handleFilterChange(newFilter: TurnFilter) {
+    setFilter(newFilter);
+    // "human" filter needs server-side filtering for correct pagination
+    if (newFilter === "human" || filter === "human") {
+      fetchTurns(1, project, order, newFilter);
+    }
+  }
+
   function handleProjectChange(newProject: string) {
     setProject(newProject);
-    fetchTurns(1, newProject, order);
+    fetchTurns(1, newProject, order, filter);
   }
 
   function handleOrderChange(newOrder: "desc" | "asc") {
     setOrder(newOrder);
-    fetchTurns(1, project, newOrder);
+    fetchTurns(1, project, newOrder, filter);
   }
 
   function handlePage(newPage: number) {
-    fetchTurns(newPage, project, order);
+    fetchTurns(newPage, project, order, filter);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -70,7 +79,7 @@ export function GlobalConversationView({
     <div className="space-y-4">
       {/* Filters bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <RoleFilter value={filter} onChange={setFilter} />
+        <RoleFilter value={filter} onChange={handleFilterChange} />
 
         <select
           value={project}
