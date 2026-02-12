@@ -19,6 +19,12 @@ export function Nav() {
         >
           Search
         </Link>
+        <Link
+          href="/patterns"
+          className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+        >
+          Patterns
+        </Link>
       </div>
     </nav>
   );
