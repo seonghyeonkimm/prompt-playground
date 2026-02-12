@@ -14,6 +14,12 @@ export function Nav() {
           Sessions
         </Link>
         <Link
+          href="/conversations"
+          className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+        >
+          Conversations
+        </Link>
+        <Link
           href="/search"
           className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
         >
