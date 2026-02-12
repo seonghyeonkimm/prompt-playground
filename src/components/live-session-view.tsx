@@ -40,6 +40,7 @@ export function LiveSessionView({
 }) {
   const [turns, setTurns] = useState<Turn[]>(initialTurns);
   const [isLive, setIsLive] = useState(false);
+  const [filter, setFilter] = useState<"all" | "user" | "assistant">("all");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const refreshTurns = useCallback(async () => {
@@ -92,6 +93,23 @@ export function LiveSessionView({
         </div>
       )}
 
+      {/* Role filter */}
+      <div className="flex gap-1 rounded-lg bg-[var(--muted)] border border-[var(--border)] p-1 w-fit">
+        {(["all", "user", "assistant"] as const).map((value) => (
+          <button
+            key={value}
+            onClick={() => setFilter(value)}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              filter === value
+                ? "bg-[var(--accent)] text-white"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            {value === "all" ? "All" : value === "user" ? "User" : "Claude"}
+          </button>
+        ))}
+      </div>
+
       {turns.length === 0 ? (
         <div className="text-center text-[var(--muted-foreground)] py-12">
           No conversation turns recorded.
@@ -102,24 +120,26 @@ export function LiveSessionView({
           return (
             <div key={turn.id} className="space-y-2">
               {/* User prompt */}
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">
-                  U
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="bg-blue-600/10 border border-blue-600/20 rounded-lg p-3">
-                    <pre className="whitespace-pre-wrap text-sm break-words">
-                      {turn.user_prompt}
-                    </pre>
+              {filter !== "assistant" && (
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">
+                    U
                   </div>
-                  <span className="text-[10px] text-[var(--muted-foreground)] mt-1 block">
-                    Turn {turn.turn_number} &middot; {formatTime(turn.user_prompt_at)}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="bg-blue-600/10 border border-blue-600/20 rounded-lg p-3">
+                      <pre className="whitespace-pre-wrap text-sm break-words">
+                        {turn.user_prompt}
+                      </pre>
+                    </div>
+                    <span className="text-[10px] text-[var(--muted-foreground)] mt-1 block">
+                      Turn {turn.turn_number} &middot; {formatTime(turn.user_prompt_at)}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Claude response */}
-              {(turn.assistant_text || tools.length > 0) && (
+              {filter !== "user" && (turn.assistant_text || tools.length > 0) && (
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-xs font-bold">
                     C
