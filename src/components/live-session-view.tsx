@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface Turn {
   id: number;
@@ -41,7 +41,6 @@ export function LiveSessionView({
   const [turns, setTurns] = useState<Turn[]>(initialTurns);
   const [isLive, setIsLive] = useState(false);
   const [filter, setFilter] = useState<"all" | "user" | "assistant">("all");
-  const bottomRef = useRef<HTMLDivElement>(null);
 
   const refreshTurns = useCallback(async () => {
     try {
@@ -79,10 +78,6 @@ export function LiveSessionView({
     };
   }, [sessionId, refreshTurns]);
 
-  useEffect(() => {
-    // Auto-scroll to bottom when new turns arrive
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns.length]);
 
   return (
     <div className="space-y-4">
@@ -182,7 +177,6 @@ export function LiveSessionView({
           );
         })
       )}
-      <div ref={bottomRef} />
     </div>
   );
 }
