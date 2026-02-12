@@ -53,8 +53,11 @@ const SYSTEM_PREFIXES = [
   "<system-",
   "<local-command",
   "<user-prompt-submit-hook>",
+  "<teammate-message",
   "[Request interrupted",
   "Base directory for this skill:",
+  "## Context (precomputed)",
+  "This session is being continued from a previous conversation",
 ];
 
 const SYSTEM_CONTENT_PATTERNS = [
@@ -64,13 +67,18 @@ const SYSTEM_CONTENT_PATTERNS = [
   /<system-reminder>/,
   /<system_instruction>/,
   /<local-command-caveat>/,
+  /<teammate-message/,
   /hook success:/,
 ];
+
+// Detect skill/command templates: "# Something Command\n" or "# Something Skill\n"
+const SKILL_TEMPLATE_PATTERN = /^#\s+.+(?:Command|Skill)\s*\n/;
 
 export function isHumanPrompt(text: string): boolean {
   const trimmed = text.trimStart();
   if (SYSTEM_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) return false;
   if (SYSTEM_CONTENT_PATTERNS.some((pattern) => pattern.test(trimmed))) return false;
+  if (SKILL_TEMPLATE_PATTERN.test(trimmed)) return false;
   return true;
 }
 
@@ -121,6 +129,11 @@ export function TurnCard({
 
   // "human" filter: hide entire turn if prompt is system-generated
   if (filter === "human" && !isHumanPrompt(turn.user_prompt)) {
+    return null;
+  }
+
+  // "assistant" filter: hide turn if no assistant content
+  if (filter === "assistant" && !turn.assistant_text && tools.length === 0) {
     return null;
   }
 
